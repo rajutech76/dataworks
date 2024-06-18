@@ -1,8 +1,10 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, regexp_replace, to_date, current_timestamp, udf,when,contains
+from pyspark.sql.functions import col, lit, regexp_replace, to_date, current_timestamp, udf,when,contains,regexp_extract
 from pyspark.sql.types import StringType
 import requests  # for external API call
 from datetime import datetime
+import os
+import shutil
 
 def hash_claim_id(claim_id):
   """
@@ -23,6 +25,27 @@ def hash_claim_id(claim_id):
 
 def dummy_nse_id(claim_id):
   return claim_id
+
+def write_to_csv(df,transform_path):
+  temp_csv_dir = os.path.join(transform_path, "temp_csv")
+  df.coalesce(1).write.csv(temp_csv_dir, header=True, mode="overwrite")
+
+  # Find the part-file in the temporary directory
+  part_file = None
+  for file in os.listdir(temp_csv_dir):
+    if file.startswith("part-") and file.endswith(".csv"):
+      part_file = file
+      break
+
+    # Move and rename the part-file to the desired location and name
+  if part_file:
+    shutil.move(os.path.join(temp_csv_dir, part_file), os.path.join(transform_path, "transform.csv"))
+
+  # Remove the temporary directory
+  shutil.rmtree(temp_csv_dir)
+
+
+
 
 def transform_data(spark, contract_path, claim_path,transform_path):
   """
@@ -45,11 +68,11 @@ def transform_data(spark, contract_path, claim_path,transform_path):
   contracts_df.show()
     
   # Define UDF for extracting claim ID without prefix
-  get_claim_id = udf(lambda claim_id: regexp_extract(claim_id, r"\d+$", 1), StringType()) 
+  #get_claim_id = udf(lambda claim_id: regexp_extract(claim_id, r"\d+$", 1), StringType()) 
     
   # Define transformation logic
   transformed_df = contracts_df.join(
-      claims_df.withColumn("SOURCE_SYSTEM_ID", get_claim_id(col("CLAIM_ID"))),
+      claims_df.withColumn("SOURCE_SYSTEM_ID", regexp_extract(col("CLAIM_ID"), r"\d+$", 0)),
       on=col("CONTRACT_ID") == col("CONTRAT_ID"), how="left"
   ).withColumn("CONTRACT_SOURCE_SYSTEM", lit("Europe 3")) \
   .withColumn("CONTRACT_SOURCE_SYSTEM_ID", col("CONTRACT_ID")) \
@@ -84,8 +107,8 @@ def transform_data(spark, contract_path, claim_path,transform_path):
       "SYSTEM_TIMESTAMP",
       "NSE_ID",
   )
-  #transformed_df.show()
-  transformed_df.write.csv(transform_path, header=True)
+  #transformed_df.coalesce(1).write.csv(os.path.join(transform_path, "transform.csv"), header=True)
+  write_to_csv(transformed_df,transform_path)
   return transformed_df
 
 # Example usage (optional)
@@ -93,6 +116,6 @@ if __name__ == "__main__":
   spark = SparkSession.builder.appName("Contract-Claim Transformation").getOrCreate()
   contract_path = "data/CONTRACT.csv"
   claim_path = "data/CLAIM.csv"
-  transform_path= "data/out_data/TRANSACTIONS.csv"
+  transform_path= "data/out_data"
   transform_data(spark, contract_path, claim_path,transform_path)
   spark.stop()
