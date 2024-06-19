@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 import shutil
 
-def hash_claim_id(claim_id):
+def hash_claim_id(claim_id_o):
   """
   Hashes a claim ID using the MD4 hash function via a REST API call.
 
@@ -16,15 +16,13 @@ def hash_claim_id(claim_id):
   Returns:
       str: The MD4 hash of the claim ID.
   """
+  claim_id =regexp_extract(claim_id_o, r"\d+$", 0)
   url = f"https://api.hashify.net/hash/md4/hex?value={claim_id}"
   response = requests.get(url)
   response.raise_for_status()  # Raise an exception for non-200 status codes
   data = response.json()
   nse_id=data.get("Digest")
   return nse_id
-
-def dummy_nse_id(claim_id):
-  return claim_id
 
 def write_to_csv(df,transform_path):
   temp_csv_dir = os.path.join(transform_path, "temp_csv")
@@ -89,7 +87,7 @@ def transform_data(spark, contract_path, claim_path,transform_path):
   .withColumn(
       "CREATION_DATE", to_date(col("CLAIM_CREATION_DATE"), "dd.MM.yyyy HH:mm:ss")
   ).withColumn("SYSTEM_TIMESTAMP", current_timestamp()) \
-  .withColumn("NSE_ID", col("CLAIM_ID"))
+  .withColumn("NSE_ID", hash_claim_id(col("CLAIM_ID")))
   
   
   transformed_df.show() 
