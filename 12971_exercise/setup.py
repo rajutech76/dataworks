@@ -9,7 +9,8 @@ setup(
         "pyspark",
         "pytest",  # Add pytest for unit testing
         "pytest-cov",# Python code coverage
-        "requests"
+        "requests",
+        "pytest-mock"
     ],
     entry_points={
         "console_scripts": [
